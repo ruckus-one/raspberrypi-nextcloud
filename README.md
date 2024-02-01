@@ -10,3 +10,19 @@ This is a boilerplate for a docker-based Nextcloud instance, living behind Traef
 - create proxy network (`sudo docker network create proxy-network` -> needs to match what's in `docker-compose.yml`)
 - run `sudo docker compose up -d`
 - visit the configured domain and start installation (it needs to be pointing to your PI with fixed IP address)
+
+# Nextcloud configuration
+
+After successful installation it makes sense to configure some typical NC stuff:
+
+File: `./nextcloud-data/config/config.php`
+
+```
+  'trusted_domains' => 
+  array (
+    0 => 'domain.ltd',
+  ),
+
+  'overwrite.cli.url' => 'https://domain.ltd',
+  'overwriteprotocol' => 'https',
+```
