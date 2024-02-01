@@ -1,0 +1,78 @@
+version: '3.7'
+
+services:
+  reverse-proxy:
+    image: traefik:v2.10
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./traefik/config/traefik.yml:/traefik.yml
+      - ./traefik/certificates/acme.json:/acme.json
+    networks:
+      - proxy-network
+
+  nextcloud-db:
+    image: mariadb:latest
+    container_name: nextcloud-db
+    command: --transaction-isolation=READ-COMMITTED --log-bin=ROW --skip-innodb-read-only-compressed
+    restart: unless-stopped
+    volumes:
+      - ./mysql-data:/var/lib/mysql
+    environment:
+      - MYSQL_ROOT_PASSWORD=${DB_ROOT_PASSWORD}
+      - MYSQL_PASSWORD=${DB_PASSWORD}
+      - MYSQL_DATABASE=${DB_NAME}
+      - MYSQL_USER=${DB_USER}
+    networks:
+      - default
+
+  nextcloud-redis:
+    image: redis:alpine
+    container_name: nextcloud-redis
+    hostname: nextcloud-redis
+    restart: unless-stopped
+    command: redis-server --requirepass ${REDIS_PASSWORD}
+    networks:
+      - default
+
+  nextcloud-app:
+    image: nextcloud
+    container_name: nextcloud-app
+    restart: unless-stopped
+    depends_on:
+      - nextcloud-db
+      - nextcloud-redis
+    environment:
+      - REDIS_HOST=nextcloud-redis
+      - REDIS_HOST_PASSWORD=${REDIS_PASSWORD}
+      - MYSQL_HOST=nextcloud-db
+      - MYSQL_USER=${DB_USER}
+      - MYSQL_PASSWORD=${DB_PASSWORD}
+      - MYSQL_DATABASE=${DB_NAME}
+    volumes:
+      - ./nextcloud-data:/var/www/html
+    labels:
+      - "traefik.http.middlewares.nc-rep.redirectregex.regex=https://(.*)/.well-known/(card|cal)dav"
+      - "traefik.http.middlewares.nc-rep.redirectregex.replacement=https://$$1/remote.php/dav/"
+      - "traefik.http.middlewares.nc-rep.redirectregex.permanent=true"
+      - "traefik.http.middlewares.nc-header.headers.customFrameOptionsValue=SAMEORIGIN"
+      - "traefik.http.middlewares.nc-header.headers.customResponseHeaders.Strict-Transport-Security=15552000"
+
+      - "traefik.http.routers.nc.entrypoints=http"
+      - "traefik.http.routers.nc.rule=Host(`${NEXTCLOUD_DOMAIN}`)"
+
+      - "traefik.http.routers.nc-secure.entrypoints=https"
+      - "traefik.http.routers.nc-secure.rule=Host(`${NEXTCLOUD_DOMAIN}`)"
+      - "traefik.http.routers.nc-secure.middlewares=nc-rep,nc-header"
+      - "traefik.http.routers.nc-secure.tls=true"
+      - "traefik.http.routers.nc-secure.tls.certresolver=letsencrypt"
+
+    networks:
+      - proxy-network
+      - default
+
+networks:
+  proxy-network:
+    external: true
